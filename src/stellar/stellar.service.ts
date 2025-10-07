@@ -73,6 +73,7 @@ export class StellarService {
       .stream({
         onmessage: async (payment) => {
           try {
+            
             this.parseStellarTx(payment);
           } catch (err) {
             console.error('Error processing payment:', err.message);
@@ -87,16 +88,16 @@ export class StellarService {
   async parseStellarTx(op: any) {
     if (
       op.type === 'payment' &&
-      op.amount > 0.000009 &&
+      parseFloat(op.amount) > 0.000009 &&
       (await this.redisService.isKeyExist(
         process.env.STELLAR_REDIS_KEY as string,
-        op.to,
+        op.to
       ))
     ) {
       const fcmToken: string | void = await this.getFcmToken(op.to);
       const asset = op.asset_type === 'native' ? 'XLM' : `${op.asset_code}`;
       const title: string = `${asset.toUpperCase()} Transaction`;
-      const body: string = `Received ${ethers.formatEther(op.amount)} ${asset.toUpperCase()} from ${op.from}`;
+      const body: string = `Received ${parseFloat(op.amount)} ${asset.toUpperCase()} from ${op.from}`;
       await this.notificationService.sendNotification(fcmToken as string, {
         title,
         body,
