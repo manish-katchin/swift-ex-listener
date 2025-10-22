@@ -1,11 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import mongoose from 'mongoose';
-import { Device } from 'src/device/schema/device.schema';
-
-
-export type WalletPopulated = Wallet & {
-  deviceId?: Device;
-};
 
 @Schema({ timestamps: true })
 export class Wallet {
