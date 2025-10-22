@@ -186,18 +186,6 @@ export class BlockListenerService {
 
       offset += limit;
     }
-    // const allAddressesEth = await this.redisService.hGetAll(process.env.REDIS_KEY_ETH as string);
-    // console.log(allAddressesEth);
-    // const allAddressesBnb = await this.redisService.hGetAll(process.env.REDIS_KEY_BNB as string);
-    // console.log(allAddressesBnb);
-    // const allAddressesEvm = await this.redisService.hGetAll(process.env.STELLAR_REDIS_KEY as string);
-    // console.log(allAddressesEvm);
-    //     const fcmToken = await this.redisService.hGet(
-    //   process.env.REDIS_KEY_ETH as string,
-    //   '0xcc2895a260f0fcd6859992b1121a2f1db7010cbc' // address
-    // );
-
-    //console.log(await this.redisService.hGetKey(process.env.REDIS_KEY_ETH as string));
 
   }
 }
