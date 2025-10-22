@@ -1,262 +1,206 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { ethers } from 'ethers';
+import { HttpException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { RedisService } from '../redis/redis.service';
 import { FirebaseNotificationService } from '../notification/notification.service';
 import { WalletService } from '../wallet/wallet.service';
-import { DeviceService } from '../device/device.service';
-import { Wallet } from '../wallet/schema/wallet.schema';
-import { Device } from '../device/schema/device.schema';
-import { Chain } from '../common/enum/chain.eum';
+import { ALCHEMY_API_CREATEHOOK, ALCHEMY_NETWORK_ETH, WebhookConfig, ALCHEMY_GRAPHQL_QUERY_ETH, ALCHEMY_NETWORK_BNB, ALCHEMY_GRAPHQL_QUERY_BNB } from 'src/common/constants/alchemy.constants';
+import { WalletWithDevice } from '../wallet/wallet.types';
 
 @Injectable()
 export class BlockListenerService {
+
   private readonly logger = new Logger(BlockListenerService.name);
-  private readonly ethProvider: ethers.WebSocketProvider;
-  private readonly bscProvider: ethers.WebSocketProvider;
-  private tokenAddresses: string[];
-  private transferTopic: string;
-  private addressToTokenMapping: Map<string, string> = new Map();
+
+  private baseUrl: string;
+
+  private alchemyToken: string;
+
+  private alchemyEventHookETH: string;
+
+  private alchemyEventHookBNB: string;
+
+  private isUpdateAllHooks: boolean;
+
+  private isUpdateHookETH: boolean;
+
+  private isUpdateHookBNB: boolean;
+
+  private isUpdateRedis: boolean;
 
   constructor(
     private readonly configService: ConfigService,
     private readonly redisService: RedisService,
     private readonly notificationService: FirebaseNotificationService,
-    private readonly walletService: WalletService,
-    private readonly deviceService: DeviceService,
+    private readonly walletService: WalletService
   ) {
-    const ethWsUrl = this.configService.get<string>('ETH_WS_URL');
-    const bscWsUrl = this.configService.get<string>('BSC_WS_URL');
-    console.log(ethWsUrl, bscWsUrl);
-    this.ethProvider = new ethers.WebSocketProvider(ethWsUrl as string);
-    this.bscProvider = new ethers.WebSocketProvider(bscWsUrl as string);
 
-    this.transferTopic = this.configService.get<string>(
-      'TRANSFER_EVENT_TOPIC',
-    ) as string;
+    this.baseUrl = this.configService.get<string>('ALCHEMY_BASE_URL') || "/";
+    this.alchemyToken = this.configService.get<string>('ALCHEMY_TOKEN') || "NAN";
+    this.isUpdateAllHooks = this.configService.get<string>('UPDATE_ADDRESS_ALL_ALCHEMY') === 'true';
+    this.isUpdateHookETH = this.configService.get<string>('UPDATE_ADDRESS_ETH_ALCHEMY') === 'true';
+    this.isUpdateHookBNB = this.configService.get<string>('UPDATE_ADDRESS_BNB_ALCHEMY') === 'true';
+    this.isUpdateRedis = this.configService.get<string>('IS_REDIS_INIT') === 'true';
+    this.alchemyEventHookETH = this.configService.get<string>('ALCHEMY_EVENT_ETH_HOOK') || "NAN";
+    this.alchemyEventHookBNB = this.configService.get<string>('ALCHEMY_EVENT_BNB_HOOK') || "NAN";
 
-    this.mapContractAddressToSymbol();
-    this.tokenAddresses = Array.from(this.addressToTokenMapping.keys());
   }
 
   async onModuleInit() {
-    this.logger.log('Starting Ethereum log subscription...');
+    this.logger.log('Starting Alchemy log subscription...');
+
     await this.addWalletAddressToRedis();
-    // await this.subscribeToTransferEvents();
-    //await this.subscribeToNewBlocks();
+
+    await this.createWebhook({
+      redisKey: process.env.REDIS_KEY_ETH as string,
+      network: ALCHEMY_NETWORK_ETH,
+      webhookName: ALCHEMY_NETWORK_ETH,
+      updateHookFlag: this.isUpdateHookETH,
+      webhookCallbackURL: this.alchemyEventHookETH,
+      graphQlQuery: ALCHEMY_GRAPHQL_QUERY_ETH,
+      apiURL: ALCHEMY_API_CREATEHOOK
+    });
+
+    await this.createWebhook({
+      redisKey: process.env.REDIS_KEY_BNB as string,
+      network: ALCHEMY_NETWORK_BNB,
+      webhookName: ALCHEMY_NETWORK_BNB,
+      updateHookFlag: this.isUpdateHookBNB,
+      webhookCallbackURL: this.alchemyEventHookBNB,
+      graphQlQuery: ALCHEMY_GRAPHQL_QUERY_BNB,
+      apiURL: ALCHEMY_API_CREATEHOOK
+    });
+
   }
 
-  private async subscribeToTransferEvents(): Promise<void> {
-    this.ethProvider.on(
-      { address: this.tokenAddresses, topics: [this.transferTopic] },
-      (log) => this.handleLog(log),
-    );
+  private async createWebhook(config: WebhookConfig): Promise<void> {
 
-    this.bscProvider.on(
-      { address: this.tokenAddresses, topics: [this.transferTopic] },
-      (log) => this.handleLog(log),
-    );
+    // ***** All hooks should be true to update any hook ******
+    if (!this.isUpdateAllHooks || !config.updateHookFlag) return;
 
+    let addressKeys: string[] = await this.redisService.hGetKey(config.redisKey as string);
+
+    const path: string = `${this.baseUrl}${config.apiURL}`;
     this.logger.log(
-      `Listening for Transfer events on ${this.tokenAddresses.length} token(s)`,
+      `Creating New WebHook`,
     );
-  }
 
-  private async handleLog(log: ethers.Log): Promise<void> {
-    try {
-      const parsed = this.decodeTransferLog(log);
-      this.logger.debug(
-        `Transfer detected — from: ${parsed.from}, to: ${parsed.to}, value: ${parsed.value}`,
-      );
-      if (
-        await this.redisService.isKeyExist(
-          process.env.REDIS_KEY as string,
-          parsed.to,
-        )
-      ) {
-        const fcmToken: string | void = await this.getFcmToken(parsed.to);
-        if (fcmToken) {
-          const tokenType: string | undefined = this.addressToTokenMapping.get(
-            parsed.address,
-          );
-          const title: string = `${tokenType} Transaction`;
-          const body: string = `Received ${ethers.formatEther(parsed.value)} ${tokenType} from ${parsed.from}`;
-
-          await this.notificationService.sendNotification(fcmToken, {
-            title,
-            body,
-          });
-        }
-      }
-    } catch (err: unknown) {
-      if (err instanceof Error) {
-        this.logger.error(`Error decoding log: ${err.message}`);
-      } else {
-        this.logger.error(`Unknown error: ${String(err)}`);
-      }
-    }
-  }
-
-  private decodeTransferLog(log: ethers.Log) {
-    const iface = new ethers.Interface([
-      'event Transfer(address indexed from, address indexed to, uint256 value)',
-    ]);
-    const decoded = iface.parseLog(log);
-
-    return {
-      from: decoded?.args.from,
-      to: decoded?.args.to,
-      value: ethers.formatUnits(decoded?.args.value, 18),
-      address: log.address,
-    };
-  }
-
-  private async subscribeToNewBlocks(): Promise<void> {
-    console.log('==== ethProvider ===', this.ethProvider);
-    this.ethProvider.on('block', async (blockNumber: number) => {
-      try {
-        this.logger.log('==== new block received ===', blockNumber);
-        const block = await this.ethProvider.getBlock(blockNumber, true);
-        if (!block?.transactions) return;
-        this.logger.log('==== managing block ===', blockNumber);
-
-        await this.manageBlock(block, Chain.Eth);
-      } catch (err: unknown) {
-        if (err instanceof Error) {
-          this.logger.error(`Block handler error: ${err.message}`);
-        } else {
-          this.logger.error(`Unknown block handler error: ${String(err)}`);
-        }
-      }
-    });
-
-    this.bscProvider.on('block', async (blockNumber: number) => {
-      try {
-        const block = await this.bscProvider.getBlock(blockNumber, true);
-        if (!block?.transactions) return;
-        await this.manageBlock(block, Chain.Bsc);
-      } catch (err: unknown) {
-        if (err instanceof Error) {
-          this.logger.error(`Block handler error: ${err.message}`);
-        } else {
-          this.logger.error(`Unknown block handler error: ${String(err)}`);
-        }
-      }
-    });
-
-    this.logger.log(`Subscribed to new block headers.`);
-  }
-
-  async manageBlock(block: ethers.Block, chain: Chain) {
-    await Promise.all(
-      block.transactions.map(async (tx: any) => {
-        if (
-          tx.value &&
-          tx.to &&
-          (await this.redisService.isKeyExist(
-            process.env.ETH_KEY as string,
-            tx.to,
-          ))
-        ) {
-          const deviceToken = await this.getFcmToken(tx.to);
-          if (!deviceToken) {
-            this.logger.log('=== No device token found===');
-            return;
-          }
-          const tokenType: string = chain === Chain.Bsc ? 'BNB' : 'ETH';
-          const title: string = `${tokenType} Transaction`;
-          const body: string = `Received ${ethers.formatEther(tx.value)} ETH from ${tx.to}`;
-          await this.notificationService.sendNotification(deviceToken, {
-            title,
-            body,
-          });
-        }
+    const response = await fetch(path, {
+      method: 'POST',
+      headers: {
+        'X-Alchemy-Token': this.alchemyToken,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        network: config.network,
+        name: config.webhookName,
+        webhook_type: "ADDRESS_ACTIVITY",
+        webhook_url: config.webhookCallbackURL,
+        graphql_query: config.graphQlQuery,
+        addresses: addressKeys
       }),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new HttpException(`Alchemy error: ${error}`, response.status);
+    }
+    this.logger.log(
+      ` === All Addresses Updated with Status ${response}`,
     );
   }
 
-  async getFcmToken(address: string): Promise<string | void> {
-    try {
-      const wallet: Wallet | null =
-        await this.walletService.findByMultiChainAddressWithoutDevice({
-          walletAddress: address,
-        });
+  handleWebhookEvent(body: any) {
 
-      if (!wallet) {
-        this.logger.log(` === No wallet exist with address ${address} ===`);
-        return;
-      }
+    const network = body.event.network.split('_')[0];
+    const activity = body.event.activity[0];
+    const fromAddress = activity.fromAddress;
+    const toAddress = activity.toAddress;
+    const isToken = activity?.category === "token";
+    const tokenType = isToken ? activity.asset : network;
+    const value = activity.value;
+    const txHash = activity.hash;
+    const redisKey = network === "ETH" ? process.env.REDIS_KEY_ETH : process.env.REDIS_KEY_BNB;
 
-      const device: Device | null = await this.deviceService.findOne(
-        wallet.deviceId,
-      );
+    this.sendNotification(toAddress, tokenType, value, "Received: ", fromAddress, network, txHash, redisKey);
 
-      if (!device) {
-        this.logger.log(
-          ` === No device exist with deviceId ${wallet.deviceId} ===`,
-        );
-        return;
-      }
-
-      return device.fcmToken;
-    } catch (error) {
-      this.logger.error('Error sending notification:', error.message);
-    }
   }
 
-  mapContractAddressToSymbol() {
-    const contractAddressesStr: string | undefined =
-      this.configService.get<string>('CONTRACT_ADDRESSES_TO_WATCH');
+  async sendNotification(address, tokenType, value, altText, from, network, txHash, redisKey) {
 
-    const contractSymbolStr: string | undefined =
-      this.configService.get<string>('TOKEN_TO_WATCH');
-
-    if (contractSymbolStr && contractAddressesStr) {
-      const contractSymbols: string[] = contractSymbolStr.split(',');
-      const contractAddresses: string[] = contractAddressesStr.split(',');
-      console.log('===== contractSymbols', contractSymbols);
-      console.log('===== map===', this.addressToTokenMapping);
-
-      for (let i = 0; i < contractSymbols.length; i++) {
-        console.log('===== ma p===', this.addressToTokenMapping);
-        this.addressToTokenMapping.set(
-          contractAddresses[i],
-          contractSymbols[i],
-        );
-      }
+    const fcmToken: string | null = await this.redisService.hGet(redisKey as string, address);
+     const data: Record<string, string> = {
+      network,
+      txHash: String(txHash)
+    };
+    
+    if (fcmToken) {
+      const title: string = `${altText} ${value}  ${tokenType} `;
+      const body: string = `From ${from.slice(0, 6)}...${from.slice(-4)}`;
+      await this.notificationService.sendNotification(fcmToken, {
+        title,
+        body,
+        data
+      });
     }
   }
 
   async addWalletAddressToRedis() {
-    let limit = 20,
-      offset = 0;
+
+    if (!this.isUpdateRedis) return;
+
+    let limit = 200, offset = 0;
     const total = await this.walletService.totalRecords();
     console.log('===total ', total);
     while (true) {
-      const records = await this.walletService.getWallets(limit, offset);
-      console.log(records);
+      const records = await this.walletService.findAllByWithDevice(limit, offset);
+
       if (records && records.length == 0) {
         this.logger.log('All records processed');
         break;
       }
-      // Process your records here
-      const multiChainAddresses: string[] = [];
-      const stellarAddresses: string[] = [];
-      for (const record of records as Wallet[]) {
-        // do something with record
-        multiChainAddresses.push(record?.multiChainAddress);
-        stellarAddresses.push(record?.stellarAddress);
-      }
-      this.redisService.setKeys(
-        process.env.REDIS_KEY as string,
-        multiChainAddresses,
-      );
 
-      this.redisService.setKeys(
-        process.env.STELLAR_REDIS_KEY as string,
-        stellarAddresses,
-      );
+
+      const addressMapEth: Record<string, string> = {};
+      const addressMapBnb: Record<string, string> = {};
+      const addressMapStellar: Record<string, string> = {};
+      for (const record of records as WalletWithDevice[]) {
+
+        if (record && record.wallets && record.deviceId) {
+
+          const wallet: WalletWithDevice = record;
+
+          addressMapEth[record.wallets.get("ethAddress") || "NA"] = record.deviceId.fcmToken;
+          addressMapBnb[record.wallets.get("bnbAddress") || "NA"] = record.deviceId.fcmToken;
+          addressMapStellar[record.wallets.get("stellarAddress") || "NA"] = record.deviceId.fcmToken;
+        }
+
+      }
+      if (Object.keys(addressMapEth).length > 0)
+        await this.redisService.hSet(process.env.REDIS_KEY_ETH as string, addressMapEth);
+
+      if (Object.keys(addressMapBnb).length > 0)
+        await this.redisService.hSet(process.env.REDIS_KEY_BNB as string, addressMapBnb);
+
+      if (Object.keys(addressMapStellar).length > 0)
+        await this.redisService.hSet(process.env.STELLAR_REDIS_KEY as string, addressMapStellar);
+
       offset += limit;
     }
+    // const allAddressesEth = await this.redisService.hGetAll(process.env.REDIS_KEY_ETH as string);
+    // console.log(allAddressesEth);
+    // const allAddressesBnb = await this.redisService.hGetAll(process.env.REDIS_KEY_BNB as string);
+    // console.log(allAddressesBnb);
+    // const allAddressesEvm = await this.redisService.hGetAll(process.env.STELLAR_REDIS_KEY as string);
+    // console.log(allAddressesEvm);
+    //     const fcmToken = await this.redisService.hGet(
+    //   process.env.REDIS_KEY_ETH as string,
+    //   '0xcc2895a260f0fcd6859992b1121a2f1db7010cbc' // address
+    // );
+
+    //console.log(await this.redisService.hGetKey(process.env.REDIS_KEY_ETH as string));
+
   }
 }
+
+
+

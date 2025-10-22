@@ -49,7 +49,23 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   }
 
   async isKeyExist(key: string, value: string) {
-    const exists = await this.client.sismember(key, value);
+    
+    const exists = await this.client.hget(key, value);
     return exists ? true : false;
+  }
+
+   async hSet(key: string, map: Record<string, string>) {
+    await this.client.hset(key, map);
+  }
+
+  async hGet(key: string, field: string) {
+    return await this.client.hget(key, field);
+  }
+
+  async hGetKey(key: string) {
+    return await this.client.hkeys(key);
+  }
+  async hGetAll(key: string): Promise<Record<string, string>> {
+    return await this.client.hgetall(key);
   }
 }

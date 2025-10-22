@@ -4,12 +4,13 @@ import { Wallet } from './schema/wallet.schema';
 import mongoose from 'mongoose';
 import { StellarAddressDto } from './dto/stellar-address.dto';
 import { WalletAddressDto } from './dto/wallet-address.dto';
+import { WalletWithDevice } from './wallet.types';
 
 @Injectable()
 export class WalletService {
   private readonly logger = new Logger(WalletService.name);
 
-  constructor(private readonly walletRepo: WalletRepository) {}
+  constructor(private readonly walletRepo: WalletRepository) { }
 
   async findByStellarAddress(
     stellarAddressDto: StellarAddressDto,
@@ -37,7 +38,16 @@ export class WalletService {
     return this.walletRepo.findWallets(limit, offset);
   }
 
+
   async totalRecords() {
     return this.walletRepo.totalCount();
   }
+
+  async findAllByWithDevice(
+    limit: number, offset: number
+  ): Promise<WalletWithDevice[] | null> {
+
+    return this.walletRepo.findAllByWithDevice(limit, offset);
+  }
+
 }
