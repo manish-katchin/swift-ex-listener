@@ -9,6 +9,7 @@ import { BlockListenerModule } from './block-listener/block-listener.module';
 import { DeviceModule } from './device/device.module';
 import { WalletModule } from './wallet/wallet.module';
 import { ConfigModule } from '@nestjs/config';
+import { AuthModule } from './auth/auth.module';
 
 @Module({
   imports: [
@@ -18,12 +19,14 @@ import { ConfigModule } from '@nestjs/config';
     MongooseModule.forRoot(process.env.MONGODB_CONN_STRING as any, {
       dbName: process.env.DB_NAME,
     }),
+    AuthModule,
     StellarModule,
     RedisModule,
     NotificationModule,
     BlockListenerModule,
     DeviceModule,
     WalletModule,
+    AuthModule,
   ],
   controllers: [AppController],
   providers: [AppService],
