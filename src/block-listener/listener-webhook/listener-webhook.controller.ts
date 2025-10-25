@@ -12,7 +12,7 @@ export class ListenerWebhookController {
   @Post('eventeth')
   async handleEventEth(@Body() body: any) {
     this.logger.log(`Received event`);
-    await this.blockListenerService.handleWebhookEvent(body);
+    this.blockListenerService.handleWebhookEvent(body);
     return { success: true };
   }
 
@@ -20,7 +20,7 @@ export class ListenerWebhookController {
   @Post('eventbnb')
   async handleEventBnb(@Body() body: any) {
     this.logger.log(`Received event`);
-    await this.blockListenerService.handleWebhookEvent(body);
+    this.blockListenerService.handleWebhookEvent(body);
     return { success: true };
   }
  

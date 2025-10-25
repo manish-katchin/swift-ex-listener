@@ -4,6 +4,7 @@ import { RedisupdateController } from './redisupdate/redisupdate.controller';
 import { DeviceModule } from 'src/device/device.module';
 import { AuthModule } from 'src/auth/auth.module';
 
+
 @Module({
   imports: [DeviceModule,AuthModule],
   providers: [RedisService],

@@ -40,19 +40,21 @@ export const ALCHEMY_GRAPHQL_QUERY_BNB = `
 
 export const ALCHEMY_API_CREATEHOOK = '/create-webhook';
 
+export const ALCHEMY_API_UPDATEHOOK = '/update-webhook-addresses';
+
 export const ALCHEMY_NETWORK_ETH = 'ETH_MAINNET';
 
 export const ALCHEMY_NETWORK_BNB = 'BNB_MAINNET';
 
 export interface WebhookConfig {
-  redisKey: string;            
-  network: string;             
-  webhookName: string;         
-  updateHookFlag: boolean;   
-  webhookCallbackURL: string;
-  apiURL:string;
-  graphQlQuery:string;
-
+  redisKey?: string;            
+  network?: string;             
+  webhookName?: string;         
+  updateHookFlag?: boolean;   
+  webhookCallbackURL?: string;
+  apiURL?:string;
+  graphQlQuery?:string;
+  webHookId?:string;
 }
 
 

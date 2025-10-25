@@ -10,6 +10,7 @@ import Redis from 'ioredis';
 import { DeviceService } from 'src/device/device.service';
 import { Device } from 'src/device/schema/device.schema';
 import { ApiResponse, RedisWalletBody } from './interfaces/redis-wallet.interface';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 
 
 @Injectable()
@@ -21,9 +22,10 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
 
   constructor(
     private readonly deviceService: DeviceService,
+    private readonly eventEmitter: EventEmitter2
   ) { }
 
-  onModuleInit() {
+ async onModuleInit() {
     this.client = new Redis({
       host: process.env.REDIS_HOST,
       port: Number(process.env.REDIS_PORT), // default Redis port
@@ -36,6 +38,14 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     this.client.quit();
   }
 
+   getClient(): Redis {
+    return this.client;
+  }
+
+  isReady(): boolean {
+    return this.client && this.client.status === 'ready';
+  }
+
   async checkConnection() {
     try {
       const pong = await this.client.ping();
@@ -43,7 +53,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
       return pong;
     } catch (err) {
       console.error('Redis connection failed:', err);
-      throw err;
+      return "Not Ready";
     }
   }
 
@@ -100,22 +110,47 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
         );
       }
 
-
       let record: Device = await this.deviceService.findOne(body.deviceId) as Device;
 
       if (wallets.ethAddress) addressMapEth[wallets.ethAddress] = record.fcmToken;
       if (wallets.bnbAddress) addressMapBnb[wallets.bnbAddress] = record.fcmToken;
       if (wallets.stellarAddress) addressMapStellar[wallets.stellarAddress] = record.fcmToken;
 
-
-      if (Object.keys(addressMapEth).length > 0)
-        result.push(await this.hSet(process.env.REDIS_KEY_ETH as string, addressMapEth));
-
-      if (Object.keys(addressMapBnb).length > 0)
-        result.push(await this.hSet(process.env.REDIS_KEY_BNB as string, addressMapBnb));
-
       if (Object.keys(addressMapStellar).length > 0)
         result.push(await this.hSet(process.env.STELLAR_REDIS_KEY as string, addressMapStellar));
+
+      if (Object.keys(addressMapEth).length > 0) {
+        result.push(await this.hSet(process.env.REDIS_KEY_ETH as string, addressMapEth));
+        try {
+          this.eventEmitter.emit('wallet.updated', 
+            {webHookId:process.env.ALCHEMY_WEBHOOKID_ETH, 
+              addresses:[wallets.ethAddress] });
+        }
+        catch (error) {
+          this.logger.error('Error handling PUT event - from Alchemy', error);
+          throw new HttpException(
+            { success: false, error: error.message },
+            HttpStatus.FAILED_DEPENDENCY
+          );
+        }
+      }
+
+      if (Object.keys(addressMapBnb).length > 0) {
+        result.push(await this.hSet(process.env.REDIS_KEY_BNB as string, addressMapBnb));
+        try {
+           this.eventEmitter.emit('wallet.updated', 
+            {webHookId:process.env.ALCHEMY_WEBHOOKID_BNB, 
+              addresses:[wallets.bnbAddress] });
+        }
+        catch (error) {
+          this.logger.error('Error handling PUT event - from Alchemy', error);
+          throw new HttpException(
+            { success: false, error: error.message },
+            HttpStatus.FAILED_DEPENDENCY
+          );
+        }
+      }
+
 
       return { success: true, totalUpdated: result };
     } catch (error) {

@@ -10,6 +10,7 @@ import { DeviceModule } from './device/device.module';
 import { WalletModule } from './wallet/wallet.module';
 import { ConfigModule } from '@nestjs/config';
 import { AuthModule } from './auth/auth.module';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { AuthModule } from './auth/auth.module';
     MongooseModule.forRoot(process.env.MONGODB_CONN_STRING as any, {
       dbName: process.env.DB_NAME,
     }),
+    EventEmitterModule.forRoot(),
     AuthModule,
     StellarModule,
     RedisModule,

@@ -4,7 +4,6 @@ import { RedisModule } from '../redis/redis.module';
 import { NotificationModule } from '../notification/notification.module';
 import { WalletModule } from '../wallet/wallet.module';
 import { DeviceModule } from '../device/device.module';
-import { ConfigModule } from '@nestjs/config';
 import { ListenerWebhookController } from './listener-webhook/listener-webhook.controller';
 
 @Module({

@@ -3,8 +3,9 @@ import { ConfigService } from '@nestjs/config';
 import { RedisService } from '../redis/redis.service';
 import { FirebaseNotificationService } from '../notification/notification.service';
 import { WalletService } from '../wallet/wallet.service';
-import { ALCHEMY_API_CREATEHOOK, ALCHEMY_NETWORK_ETH, WebhookConfig, ALCHEMY_GRAPHQL_QUERY_ETH, ALCHEMY_NETWORK_BNB, ALCHEMY_GRAPHQL_QUERY_BNB } from 'src/common/constants/alchemy.constants';
+import { ALCHEMY_API_CREATEHOOK, ALCHEMY_NETWORK_ETH, WebhookConfig, ALCHEMY_GRAPHQL_QUERY_ETH, ALCHEMY_NETWORK_BNB, ALCHEMY_GRAPHQL_QUERY_BNB, ALCHEMY_API_UPDATEHOOK } from 'src/common/constants/alchemy.constants';
 import { WalletWithDevice } from '../wallet/wallet.types';
+import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 
 @Injectable()
 export class BlockListenerService {
@@ -31,7 +32,8 @@ export class BlockListenerService {
     private readonly configService: ConfigService,
     private readonly redisService: RedisService,
     private readonly notificationService: FirebaseNotificationService,
-    private readonly walletService: WalletService
+    private readonly walletService: WalletService,
+    private readonly eventEmitter: EventEmitter2
   ) {
 
     this.baseUrl = this.configService.get<string>('ALCHEMY_BASE_URL') || "/";
@@ -72,6 +74,7 @@ export class BlockListenerService {
 
   }
 
+
   private async createWebhook(config: WebhookConfig): Promise<void> {
 
     // ***** All hooks should be true to update any hook ******
@@ -105,8 +108,34 @@ export class BlockListenerService {
       throw new HttpException(`Alchemy error: ${error}`, response.status);
     }
     this.logger.log(
-      ` === All Addresses Updated with Status ${response}`,
+      ` === All Addresses Updated with Status ${response.status}`,
     );
+  }
+
+  private async updateWebhook(config: WebhookConfig, addressKeys: string[]): Promise<void> {
+
+    const path: string = `${this.baseUrl}${config.apiURL}`;
+    this.logger.log(
+      `Updating Hook WebHook`,
+    );
+    
+    const response = await fetch(path, {
+      method: 'PATCH',
+      headers: {
+        'X-Alchemy-Token': this.alchemyToken,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        webhook_id: config.webHookId,
+        addresses_to_add: addressKeys,
+        addresses_to_remove: []
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      this.logger.error(error);
+    }
   }
 
   handleWebhookEvent(body: any) {
@@ -128,11 +157,11 @@ export class BlockListenerService {
   async sendNotification(address, tokenType, value, altText, from, network, txHash, redisKey) {
 
     const fcmToken: string | null = await this.redisService.hGet(redisKey as string, address);
-     const data: Record<string, string> = {
+    const data: Record<string, string> = {
       network,
       txHash: String(txHash)
     };
-    
+
     if (fcmToken) {
       const title: string = `${altText} ${value}  ${tokenType} `;
       const body: string = `From ${from.slice(0, 6)}...${from.slice(-4)}`;
@@ -142,6 +171,14 @@ export class BlockListenerService {
         data
       });
     }
+  }
+
+  @OnEvent('wallet.updated')
+  async handleWalletUpdateEth(payload) {
+    await this.updateWebhook({
+      webHookId: payload.webHookId,
+      apiURL: ALCHEMY_API_UPDATEHOOK
+    }, payload.addresses);
   }
 
   async addWalletAddressToRedis() {
@@ -169,9 +206,9 @@ export class BlockListenerService {
 
           const wallet: WalletWithDevice = record;
 
-          addressMapEth[record.wallets.get("ethAddress") || "NA"] = record.deviceId.fcmToken;
-          addressMapBnb[record.wallets.get("bnbAddress") || "NA"] = record.deviceId.fcmToken;
-          addressMapStellar[record.wallets.get("stellarAddress") || "NA"] = record.deviceId.fcmToken;
+          if (record.wallets.get("ethAddress")) addressMapEth[record.wallets.get("ethAddress") as string] = record.deviceId.fcmToken;
+          if (record.wallets.get("bnbAddress")) addressMapBnb[record.wallets.get("bnbAddress") as string] = record.deviceId.fcmToken;
+          if (record.wallets.get("stellarAddress")) addressMapStellar[record.wallets.get("stellarAddress") as string] = record.deviceId.fcmToken;
         }
 
       }
