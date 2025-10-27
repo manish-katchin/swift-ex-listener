@@ -1,14 +1,13 @@
 import { Module } from '@nestjs/common';
 import { RedisService } from './redis.service';
-import { RedisupdateController } from './redisupdate/redisupdate.controller';
+import { RedisController } from './redis.controller';
 import { DeviceModule } from 'src/device/device.module';
 import { AuthModule } from 'src/auth/auth.module';
 
-
 @Module({
-  imports: [DeviceModule,AuthModule],
+  imports: [DeviceModule, AuthModule],
   providers: [RedisService],
   exports: [RedisService],
-  controllers: [RedisupdateController],
+  controllers: [RedisController],
 })
 export class RedisModule {}

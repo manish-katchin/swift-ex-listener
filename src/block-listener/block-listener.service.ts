@@ -3,13 +3,20 @@ import { ConfigService } from '@nestjs/config';
 import { RedisService } from '../redis/redis.service';
 import { FirebaseNotificationService } from '../notification/notification.service';
 import { WalletService } from '../wallet/wallet.service';
-import { ALCHEMY_API_CREATEHOOK, ALCHEMY_NETWORK_ETH, WebhookConfig, ALCHEMY_GRAPHQL_QUERY_ETH, ALCHEMY_NETWORK_BNB, ALCHEMY_GRAPHQL_QUERY_BNB, ALCHEMY_API_UPDATEHOOK } from 'src/common/constants/alchemy.constants';
+import {
+  ALCHEMY_API_CREATEHOOK,
+  ALCHEMY_NETWORK_ETH,
+  WebhookConfig,
+  ALCHEMY_GRAPHQL_QUERY_ETH,
+  ALCHEMY_NETWORK_BNB,
+  ALCHEMY_GRAPHQL_QUERY_BNB,
+  ALCHEMY_API_UPDATEHOOK,
+} from '../common/constants/alchemy.constants';
 import { WalletWithDevice } from '../wallet/wallet.types';
 import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 
 @Injectable()
 export class BlockListenerService {
-
   private readonly logger = new Logger(BlockListenerService.name);
 
   private baseUrl: string;
@@ -33,18 +40,23 @@ export class BlockListenerService {
     private readonly redisService: RedisService,
     private readonly notificationService: FirebaseNotificationService,
     private readonly walletService: WalletService,
-    private readonly eventEmitter: EventEmitter2
+    private readonly eventEmitter: EventEmitter2,
   ) {
-
-    this.baseUrl = this.configService.get<string>('ALCHEMY_BASE_URL') || "/";
-    this.alchemyToken = this.configService.get<string>('ALCHEMY_TOKEN') || "NAN";
-    this.isUpdateAllHooks = this.configService.get<string>('UPDATE_ADDRESS_ALL_ALCHEMY') === 'true';
-    this.isUpdateHookETH = this.configService.get<string>('UPDATE_ADDRESS_ETH_ALCHEMY') === 'true';
-    this.isUpdateHookBNB = this.configService.get<string>('UPDATE_ADDRESS_BNB_ALCHEMY') === 'true';
-    this.isUpdateRedis = this.configService.get<string>('IS_REDIS_INIT') === 'true';
-    this.alchemyEventHookETH = this.configService.get<string>('ALCHEMY_EVENT_ETH_HOOK') || "NAN";
-    this.alchemyEventHookBNB = this.configService.get<string>('ALCHEMY_EVENT_BNB_HOOK') || "NAN";
-
+    this.baseUrl = this.configService.get<string>('ALCHEMY_BASE_URL') || '/';
+    this.alchemyToken =
+      this.configService.get<string>('ALCHEMY_TOKEN') || 'NAN';
+    this.isUpdateAllHooks =
+      this.configService.get<string>('UPDATE_ADDRESS_ALL_ALCHEMY') === 'true';
+    this.isUpdateHookETH =
+      this.configService.get<string>('UPDATE_ADDRESS_ETH_ALCHEMY') === 'true';
+    this.isUpdateHookBNB =
+      this.configService.get<string>('UPDATE_ADDRESS_BNB_ALCHEMY') === 'true';
+    this.isUpdateRedis =
+      this.configService.get<string>('IS_REDIS_INIT') === 'true';
+    this.alchemyEventHookETH =
+      this.configService.get<string>('ALCHEMY_EVENT_ETH_HOOK') || 'NAN';
+    this.alchemyEventHookBNB =
+      this.configService.get<string>('ALCHEMY_EVENT_BNB_HOOK') || 'NAN';
   }
 
   async onModuleInit() {
@@ -59,7 +71,7 @@ export class BlockListenerService {
       updateHookFlag: this.isUpdateHookETH,
       webhookCallbackURL: this.alchemyEventHookETH,
       graphQlQuery: ALCHEMY_GRAPHQL_QUERY_ETH,
-      apiURL: ALCHEMY_API_CREATEHOOK
+      apiURL: ALCHEMY_API_CREATEHOOK,
     });
 
     await this.createWebhook({
@@ -69,23 +81,20 @@ export class BlockListenerService {
       updateHookFlag: this.isUpdateHookBNB,
       webhookCallbackURL: this.alchemyEventHookBNB,
       graphQlQuery: ALCHEMY_GRAPHQL_QUERY_BNB,
-      apiURL: ALCHEMY_API_CREATEHOOK
+      apiURL: ALCHEMY_API_CREATEHOOK,
     });
-
   }
 
-
   private async createWebhook(config: WebhookConfig): Promise<void> {
-
     // ***** All hooks should be true to update any hook ******
     if (!this.isUpdateAllHooks || !config.updateHookFlag) return;
 
-    let addressKeys: string[] = await this.redisService.hGetKey(config.redisKey as string);
+    let addressKeys: string[] = await this.redisService.hGetKey(
+      config.redisKey as string,
+    );
 
     const path: string = `${this.baseUrl}${config.apiURL}`;
-    this.logger.log(
-      `Creating New WebHook`,
-    );
+    this.logger.log(`Creating New WebHook`);
 
     const response = await fetch(path, {
       method: 'POST',
@@ -96,10 +105,10 @@ export class BlockListenerService {
       body: JSON.stringify({
         network: config.network,
         name: config.webhookName,
-        webhook_type: "ADDRESS_ACTIVITY",
+        webhook_type: 'ADDRESS_ACTIVITY',
         webhook_url: config.webhookCallbackURL,
         graphql_query: config.graphQlQuery,
-        addresses: addressKeys
+        addresses: addressKeys,
       }),
     });
 
@@ -112,13 +121,13 @@ export class BlockListenerService {
     );
   }
 
-  private async updateWebhook(config: WebhookConfig, addressKeys: string[]): Promise<void> {
-
+  private async updateWebhook(
+    config: WebhookConfig,
+    addressKeys: string[],
+  ): Promise<void> {
     const path: string = `${this.baseUrl}${config.apiURL}`;
-    this.logger.log(
-      `Updating Hook WebHook`,
-    );
-    
+    this.logger.log(`Updating Hook WebHook`);
+
     const response = await fetch(path, {
       method: 'PATCH',
       headers: {
@@ -128,7 +137,7 @@ export class BlockListenerService {
       body: JSON.stringify({
         webhook_id: config.webHookId,
         addresses_to_add: addressKeys,
-        addresses_to_remove: []
+        addresses_to_remove: [],
       }),
     });
 
@@ -139,27 +148,46 @@ export class BlockListenerService {
   }
 
   handleWebhookEvent(body: any) {
-
     const network = body.event.network.split('_')[0];
     const activity = body.event.activity[0];
     const fromAddress = activity.fromAddress;
     const toAddress = activity.toAddress;
-    const isToken = activity?.category === "token";
+    const isToken = activity?.category === 'token';
     const tokenType = isToken ? activity.asset : network;
     const value = activity.value;
     const txHash = activity.hash;
-    const redisKey = network === "ETH" ? process.env.REDIS_KEY_ETH : process.env.REDIS_KEY_BNB;
+    const redisKey =
+      network === 'ETH' ? process.env.REDIS_KEY_ETH : process.env.REDIS_KEY_BNB;
 
-    this.sendNotification(toAddress, tokenType, value, "Received: ", fromAddress, network, txHash, redisKey);
-
+    this.sendNotification(
+      toAddress,
+      tokenType,
+      value,
+      'Received: ',
+      fromAddress,
+      network,
+      txHash,
+      redisKey,
+    );
   }
 
-  async sendNotification(address, tokenType, value, altText, from, network, txHash, redisKey) {
-
-    const fcmToken: string | null = await this.redisService.hGet(redisKey as string, address);
+  async sendNotification(
+    address,
+    tokenType,
+    value,
+    altText,
+    from,
+    network,
+    txHash,
+    redisKey,
+  ) {
+    const fcmToken: string | null = await this.redisService.hGet(
+      redisKey as string,
+      address,
+    );
     const data: Record<string, string> = {
       network,
-      txHash: String(txHash)
+      txHash: String(txHash),
     };
 
     if (fcmToken) {
@@ -168,64 +196,77 @@ export class BlockListenerService {
       await this.notificationService.sendNotification(fcmToken, {
         title,
         body,
-        data
+        data,
       });
     }
   }
 
   @OnEvent('wallet.updated')
   async handleWalletUpdateEth(payload) {
-    await this.updateWebhook({
-      webHookId: payload.webHookId,
-      apiURL: ALCHEMY_API_UPDATEHOOK
-    }, payload.addresses);
+    await this.updateWebhook(
+      {
+        webHookId: payload.webHookId,
+        apiURL: ALCHEMY_API_UPDATEHOOK,
+      },
+      payload.addresses,
+    );
   }
 
   async addWalletAddressToRedis() {
-
     if (!this.isUpdateRedis) return;
 
-    let limit = 200, offset = 0;
+    let limit = 200,
+      offset = 0;
     const total = await this.walletService.totalRecords();
     console.log('===total ', total);
     while (true) {
-      const records = await this.walletService.findAllByWithDevice(limit, offset);
+      const records = await this.walletService.findAllByWithDevice(
+        limit,
+        offset,
+      );
 
       if (records && records.length == 0) {
         this.logger.log('All records processed');
         break;
       }
 
-
       const addressMapEth: Record<string, string> = {};
       const addressMapBnb: Record<string, string> = {};
       const addressMapStellar: Record<string, string> = {};
       for (const record of records as WalletWithDevice[]) {
-
         if (record && record.wallets && record.deviceId) {
-
           const wallet: WalletWithDevice = record;
 
-          if (record.wallets.get("ethAddress")) addressMapEth[record.wallets.get("ethAddress") as string] = record.deviceId.fcmToken;
-          if (record.wallets.get("bnbAddress")) addressMapBnb[record.wallets.get("bnbAddress") as string] = record.deviceId.fcmToken;
-          if (record.wallets.get("stellarAddress")) addressMapStellar[record.wallets.get("stellarAddress") as string] = record.deviceId.fcmToken;
+          if (record.wallets.get('ethAddress'))
+            addressMapEth[record.wallets.get('ethAddress') as string] =
+              record.deviceId.fcmToken;
+          if (record.wallets.get('bnbAddress'))
+            addressMapBnb[record.wallets.get('bnbAddress') as string] =
+              record.deviceId.fcmToken;
+          if (record.wallets.get('stellarAddress'))
+            addressMapStellar[record.wallets.get('stellarAddress') as string] =
+              record.deviceId.fcmToken;
         }
-
       }
       if (Object.keys(addressMapEth).length > 0)
-        await this.redisService.hSet(process.env.REDIS_KEY_ETH as string, addressMapEth);
+        await this.redisService.hSet(
+          process.env.REDIS_KEY_ETH as string,
+          addressMapEth,
+        );
 
       if (Object.keys(addressMapBnb).length > 0)
-        await this.redisService.hSet(process.env.REDIS_KEY_BNB as string, addressMapBnb);
+        await this.redisService.hSet(
+          process.env.REDIS_KEY_BNB as string,
+          addressMapBnb,
+        );
 
       if (Object.keys(addressMapStellar).length > 0)
-        await this.redisService.hSet(process.env.STELLAR_REDIS_KEY as string, addressMapStellar);
+        await this.redisService.hSet(
+          process.env.STELLAR_REDIS_KEY as string,
+          addressMapStellar,
+        );
 
       offset += limit;
     }
-
   }
 }
-
-
-

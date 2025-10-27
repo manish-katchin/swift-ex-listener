@@ -5,27 +5,28 @@ import {
   Logger,
   HttpException,
   HttpStatus,
+  NotFoundException,
 } from '@nestjs/common';
 import Redis from 'ioredis';
-import { DeviceService } from 'src/device/device.service';
-import { Device } from 'src/device/schema/device.schema';
-import { ApiResponse, RedisWalletBody } from './interfaces/redis-wallet.interface';
+import { DeviceService } from '../device/device.service';
+import { Device } from '../device/schema/device.schema';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-
+import { UpdateWalletDto } from './dto/updateWallet.dto';
+import { ApiResponse } from '../common/interfaces/response';
+import mongoose from 'mongoose';
 
 @Injectable()
 export class RedisService implements OnModuleInit, OnModuleDestroy {
-
   private readonly logger = new Logger(RedisService.name);
 
   private client: Redis;
 
   constructor(
     private readonly deviceService: DeviceService,
-    private readonly eventEmitter: EventEmitter2
-  ) { }
+    private readonly eventEmitter: EventEmitter2,
+  ) {}
 
- async onModuleInit() {
+  async onModuleInit() {
     this.client = new Redis({
       host: process.env.REDIS_HOST,
       port: Number(process.env.REDIS_PORT), // default Redis port
@@ -38,7 +39,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     this.client.quit();
   }
 
-   getClient(): Redis {
+  getClient(): Redis {
     return this.client;
   }
 
@@ -53,7 +54,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
       return pong;
     } catch (err) {
       console.error('Redis connection failed:', err);
-      return "Not Ready";
+      return 'Not Ready';
     }
   }
 
@@ -70,7 +71,6 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   }
 
   async isKeyExist(key: string, value: string) {
-
     const exists = await this.client.hget(key, value);
     return exists ? true : false;
   }
@@ -90,78 +90,93 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     return this.client.hgetall(key);
   }
 
-  async handleRedisEvent(body: RedisWalletBody): Promise<ApiResponse> {
-
+  async handleUpdateAddressToRedis(
+    body: UpdateWalletDto,
+  ): Promise<ApiResponse> {
     const addressMapEth: Record<string, string> = {};
     const addressMapBnb: Record<string, string> = {};
     const addressMapStellar: Record<string, string> = {};
-    let result: number[] = []
+    let result: number[] = [];
+    console.log('==== body ==', { body });
 
     try {
       const wallets: any = body.wallets;
       try {
         if (!wallets) {
-          throw new Error("No Wallets Found")
+          throw new Error('No Wallets Found');
         }
       } catch (error: any) {
         throw new HttpException(
           { success: false, error: error.message },
-          HttpStatus.BAD_REQUEST
+          HttpStatus.BAD_REQUEST,
         );
       }
 
-      let record: Device = await this.deviceService.findOne(body.deviceId) as Device;
-
-      if (wallets.ethAddress) addressMapEth[wallets.ethAddress] = record.fcmToken;
-      if (wallets.bnbAddress) addressMapBnb[wallets.bnbAddress] = record.fcmToken;
-      if (wallets.stellarAddress) addressMapStellar[wallets.stellarAddress] = record.fcmToken;
+      let device: Device | null = await this.deviceService.findOne(
+        body.deviceId as mongoose.Schema.Types.ObjectId,
+      );
+      if (!device) {
+        throw new NotFoundException('Device not found');
+      }
+      console.log('==== device ==', { device });
+      if (wallets.ethAddress)
+        addressMapEth[wallets.ethAddress] = device.fcmToken;
+      if (wallets.bnbAddress)
+        addressMapBnb[wallets.bnbAddress] = device.fcmToken;
+      if (wallets.stellarAddress)
+        addressMapStellar[wallets.stellarAddress] = device.fcmToken;
 
       if (Object.keys(addressMapStellar).length > 0)
-        result.push(await this.hSet(process.env.STELLAR_REDIS_KEY as string, addressMapStellar));
+        result.push(
+          await this.hSet(
+            process.env.STELLAR_REDIS_KEY as string,
+            addressMapStellar,
+          ),
+        );
 
       if (Object.keys(addressMapEth).length > 0) {
-        result.push(await this.hSet(process.env.REDIS_KEY_ETH as string, addressMapEth));
+        result.push(
+          await this.hSet(process.env.REDIS_KEY_ETH as string, addressMapEth),
+        );
         try {
-          this.eventEmitter.emit('wallet.updated', 
-            {webHookId:process.env.ALCHEMY_WEBHOOKID_ETH, 
-              addresses:[wallets.ethAddress] });
-        }
-        catch (error) {
+          this.eventEmitter.emit('wallet.updated', {
+            webHookId: process.env.ALCHEMY_WEBHOOKID_ETH,
+            addresses: [wallets.ethAddress],
+          });
+        } catch (error) {
           this.logger.error('Error handling PUT event - from Alchemy', error);
           throw new HttpException(
             { success: false, error: error.message },
-            HttpStatus.FAILED_DEPENDENCY
+            HttpStatus.FAILED_DEPENDENCY,
           );
         }
       }
 
       if (Object.keys(addressMapBnb).length > 0) {
-        result.push(await this.hSet(process.env.REDIS_KEY_BNB as string, addressMapBnb));
+        result.push(
+          await this.hSet(process.env.REDIS_KEY_BNB as string, addressMapBnb),
+        );
         try {
-           this.eventEmitter.emit('wallet.updated', 
-            {webHookId:process.env.ALCHEMY_WEBHOOKID_BNB, 
-              addresses:[wallets.bnbAddress] });
-        }
-        catch (error) {
+          this.eventEmitter.emit('wallet.updated', {
+            webHookId: process.env.ALCHEMY_WEBHOOKID_BNB,
+            addresses: [wallets.bnbAddress],
+          });
+        } catch (error) {
           this.logger.error('Error handling PUT event - from Alchemy', error);
           throw new HttpException(
             { success: false, error: error.message },
-            HttpStatus.FAILED_DEPENDENCY
+            HttpStatus.FAILED_DEPENDENCY,
           );
         }
       }
-
 
       return { success: true, totalUpdated: result };
     } catch (error) {
       this.logger.error('Error handling PUT event', error);
       throw new HttpException(
         { success: false, error: error.message },
-        HttpStatus.INTERNAL_SERVER_ERROR
+        HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
   }
-
 }
-
-
