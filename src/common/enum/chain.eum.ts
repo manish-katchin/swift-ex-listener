@@ -3,3 +3,10 @@ export enum Chain {
   Bsc = 'BSC',
   Xlm = 'XLM',
 }
+
+export enum SupportedWalletChain {
+  ETH = 'eth',
+  BNB = 'bnb',
+  XLM = 'xlm',
+  MULTI = 'multi',
+}

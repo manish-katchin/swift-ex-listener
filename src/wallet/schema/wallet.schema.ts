@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import mongoose from 'mongoose';
+import { SupportedWalletChain } from '../../common/enum/chain.eum';
 
 @Schema({ timestamps: true })
 export class Wallet {
@@ -17,7 +18,7 @@ export class Wallet {
     of: String, // each chain name → address
     default: {},
   })
-  wallets: Map<string, string>;
+  addresses: Map<SupportedWalletChain, string>;
 
   @Prop({ type: Boolean, default: false })
   isPrimary: boolean;

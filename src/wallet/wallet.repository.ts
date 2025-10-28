@@ -10,7 +10,7 @@ export class WalletRepository {
   constructor(
     @InjectModel(Wallet.name)
     private walletModel: Model<Wallet>,
-  ) { }
+  ) {}
 
   async findOne(cond: Record<string, any>): Promise<Wallet | null> {
     return await this.walletModel.findOne(cond);
@@ -28,15 +28,14 @@ export class WalletRepository {
     return this.walletModel.countDocuments();
   }
 
-  async findAllByWithDevice(limit: number, offset: number): Promise<WalletWithDevice[] | null> {
-    return this.walletModel
-      .find({})
-      .skip(offset)
-      .limit(limit)
-      .populate({
-        path: 'deviceId',
-        select: 'fcmToken',
-      }) as unknown as WalletWithDevice[];
+  async findAllByWithDevice(
+    limit: number,
+    offset: number,
+  ): Promise<WalletWithDevice[] | null> {
+    return this.walletModel.find({}).skip(offset).limit(limit).populate({
+      path: 'deviceId',
+      select: 'fcmToken',
+    }) as unknown as WalletWithDevice[];
   }
 
   async migrateWalletFields(): Promise<void> {
@@ -46,25 +45,26 @@ export class WalletRepository {
         [
           {
             $set: {
-              wallets: {
-                bnbAddress: "$multiChainAddress",
-                ethAddress: "$multiChainAddress",
-                multiChainAddress: "$multiChainAddress",
-                stellarAddress: "$stellarAddress",
+              addresses: {
+                bnb: '$multiChainAddress',
+                eth: '$multiChainAddress',
+                multi: '$multiChainAddress',
+                xlm: '$stellarAddress',
               },
             },
           },
           {
-            $unset: ["multiChainAddress", "stellarAddress"],
+            $unset: ['multiChainAddress', 'stellarAddress'],
           },
         ],
       );
 
-      this.logger.log(`Migration complete. Matched: ${result.matchedCount}, Modified: ${result.modifiedCount}`);
+      this.logger.log(
+        `Migration complete. Matched: ${result.matchedCount}, Modified: ${result.modifiedCount}`,
+      );
     } catch (error) {
       this.logger.error('Error running wallet migration', error);
       throw error;
     }
   }
-
 }

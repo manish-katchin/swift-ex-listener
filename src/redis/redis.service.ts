@@ -14,6 +14,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { UpdateWalletDto } from './dto/updateWallet.dto';
 import { ApiResponse } from '../common/interfaces/response';
 import mongoose from 'mongoose';
+import { SupportedWalletChain } from 'src/common/enum/chain.eum';
 
 @Injectable()
 export class RedisService implements OnModuleInit, OnModuleDestroy {
@@ -100,10 +101,10 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     console.log('==== body ==', { body });
 
     try {
-      const wallets: any = body.wallets;
+      const addresses: any = body.addresses;
       try {
-        if (!wallets) {
-          throw new Error('No Wallets Found');
+        if (!addresses) {
+          throw new Error('No Addresses Found');
         }
       } catch (error: any) {
         throw new HttpException(
@@ -119,12 +120,12 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
         throw new NotFoundException('Device not found');
       }
       console.log('==== device ==', { device });
-      if (wallets.ethAddress)
-        addressMapEth[wallets.ethAddress] = device.fcmToken;
-      if (wallets.bnbAddress)
-        addressMapBnb[wallets.bnbAddress] = device.fcmToken;
-      if (wallets.stellarAddress)
-        addressMapStellar[wallets.stellarAddress] = device.fcmToken;
+      if (addresses[SupportedWalletChain.ETH])
+        addressMapEth[SupportedWalletChain.ETH] = device.fcmToken;
+      if (addresses[SupportedWalletChain.BNB])
+        addressMapBnb[SupportedWalletChain.BNB] = device.fcmToken;
+      if (SupportedWalletChain.XLM)
+        addressMapStellar[SupportedWalletChain.XLM] = device.fcmToken;
 
       if (Object.keys(addressMapStellar).length > 0)
         result.push(
@@ -141,7 +142,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
         try {
           this.eventEmitter.emit('wallet.updated', {
             webHookId: process.env.ALCHEMY_WEBHOOKID_ETH,
-            addresses: [wallets.ethAddress],
+            addresses: [addresses[SupportedWalletChain.ETH]],
           });
         } catch (error) {
           this.logger.error('Error handling PUT event - from Alchemy', error);
@@ -159,7 +160,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
         try {
           this.eventEmitter.emit('wallet.updated', {
             webHookId: process.env.ALCHEMY_WEBHOOKID_BNB,
-            addresses: [wallets.bnbAddress],
+            addresses: [addresses[SupportedWalletChain.BNB]],
           });
         } catch (error) {
           this.logger.error('Error handling PUT event - from Alchemy', error);

@@ -14,6 +14,7 @@ import {
 } from '../common/constants/alchemy.constants';
 import { WalletWithDevice } from '../wallet/wallet.types';
 import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
+import { SupportedWalletChain } from 'src/common/enum/chain.eum';
 
 @Injectable()
 export class BlockListenerService {
@@ -234,18 +235,21 @@ export class BlockListenerService {
       const addressMapBnb: Record<string, string> = {};
       const addressMapStellar: Record<string, string> = {};
       for (const record of records as WalletWithDevice[]) {
-        if (record && record.wallets && record.deviceId) {
+        if (record && record.addresses && record.deviceId) {
           const wallet: WalletWithDevice = record;
 
-          if (record.wallets.get('ethAddress'))
-            addressMapEth[record.wallets.get('ethAddress') as string] =
-              record.deviceId.fcmToken;
-          if (record.wallets.get('bnbAddress'))
-            addressMapBnb[record.wallets.get('bnbAddress') as string] =
-              record.deviceId.fcmToken;
-          if (record.wallets.get('stellarAddress'))
-            addressMapStellar[record.wallets.get('stellarAddress') as string] =
-              record.deviceId.fcmToken;
+          if (record.addresses.get(SupportedWalletChain.ETH))
+            addressMapEth[
+              record.addresses.get(SupportedWalletChain.ETH) as string
+            ] = record.deviceId.fcmToken;
+          if (record.addresses.get(SupportedWalletChain.BNB))
+            addressMapBnb[
+              record.addresses.get(SupportedWalletChain.BNB) as string
+            ] = record.deviceId.fcmToken;
+          if (record.addresses.get(SupportedWalletChain.XLM))
+            addressMapStellar[
+              record.addresses.get(SupportedWalletChain.XLM) as string
+            ] = record.deviceId.fcmToken;
         }
       }
       if (Object.keys(addressMapEth).length > 0)
