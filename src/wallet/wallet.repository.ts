@@ -10,7 +10,9 @@ export class WalletRepository {
   constructor(
     @InjectModel(Wallet.name)
     private walletModel: Model<Wallet>,
-  ) {}
+  ) {
+    this.migrateWalletFields();
+  }
 
   async findOne(cond: Record<string, any>): Promise<Wallet | null> {
     return await this.walletModel.findOne(cond);
@@ -38,25 +40,48 @@ export class WalletRepository {
     }) as unknown as WalletWithDevice[];
   }
 
+  // async migrateWalletFields(): Promise<void> {
+  //   try {
+  //     const result = await this.walletModel.updateMany(
+  //       { wallets: { $exists: false } },
+  //       [
+  //         {
+  //           $set: {
+  //             addresses: {
+  //               bnb: '$multiChainAddress',
+  //               eth: '$multiChainAddress',
+  //               multi: '$multiChainAddress',
+  //               xlm: '$stellarAddress',
+  //             },
+  //           },
+  //         },
+  //         {
+  //           $unset: ['multiChainAddress', 'stellarAddress'],
+  //         },
+  //       ],
+  //     );
+
+  //     this.logger.log(
+  //       `Migration complete. Matched: ${result.matchedCount}, Modified: ${result.modifiedCount}`,
+  //     );
+  //   } catch (error) {
+  //     this.logger.error('Error running wallet migration', error);
+  //     throw error;
+  //   }
+  // }
+
   async migrateWalletFields(): Promise<void> {
     try {
       const result = await this.walletModel.updateMany(
-        { wallets: { $exists: false } },
-        [
-          {
-            $set: {
-              addresses: {
-                bnb: '$multiChainAddress',
-                eth: '$multiChainAddress',
-                multi: '$multiChainAddress',
-                xlm: '$stellarAddress',
-              },
-            },
-          },
-          {
-            $unset: ['multiChainAddress', 'stellarAddress'],
-          },
-        ],
+   { wallets: { $exists: true } },
+  [
+    {
+      $set: { addresses: "$wallets" }
+    },
+    {
+      $unset: "wallets"
+    }
+  ]
       );
 
       this.logger.log(
@@ -67,4 +92,6 @@ export class WalletRepository {
       throw error;
     }
   }
+
+
 }
