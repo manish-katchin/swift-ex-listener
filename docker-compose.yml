@@ -1,0 +1,15 @@
+services:
+  horizon:
+    image: stellar/quickstart:testing
+    depends_on:
+      - db
+    environment:
+      - DATABASE_URL=postgresql://stellar:stellar@db:5432/horizon?sslmode=disable
+
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: stellar
+      POSTGRES_PASSWORD: stellar
+      POSTGRES_DB: horizon
+

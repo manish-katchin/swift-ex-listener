@@ -11,7 +11,7 @@ export class WalletRepository {
     @InjectModel(Wallet.name)
     private walletModel: Model<Wallet>,
   ) {
-    this.migrateWalletFields();
+ //   this.migrateWalletFields();
   }
 
   async findOne(cond: Record<string, any>): Promise<Wallet | null> {
