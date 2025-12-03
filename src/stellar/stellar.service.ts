@@ -9,7 +9,6 @@ export class StellarService {
   private readonly logger = new Logger(StellarService.name);
   private server;
   private network: Networks;
-  public i = 0;
 
   constructor(
     private readonly redisService: RedisService,
@@ -72,6 +71,10 @@ export class StellarService {
     ) {
       const chain: string =
         effect.asset_type === 'native' ? 'XLM' : effect.asset_code;
+
+      if(chain == "XLM" && parseFloat(effect.amount) < 0.00009) return;
+      if(! await this.checkTrustline(effect.asset_code,effect.asset_issuer,effect.account)) return;
+
       this.sendNotification(
         effect.account,
         chain,
@@ -155,6 +158,25 @@ export class StellarService {
   async onModuleInit() {
     this.startLedgerLoop();
   }
+
+  async  checkTrustline(assetCode:string,assetIssuer:string,destination:string): Promise<boolean> {
+  try {
+  
+    const account = await this.server.loadAccount(destination);
+    const balances = account.balances;
+
+    const trusted = balances.some(
+      (b) =>
+        b.asset_code === assetCode &&
+        b.asset_issuer === assetIssuer
+    );
+
+    return trusted;
+ 
+  } catch (err) {
+    return false;
+  }
+}
 
   async startLedgerLoop() {
     this.logger.log('Starting stellar log subscription...');
