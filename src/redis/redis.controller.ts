@@ -3,14 +3,14 @@ import { RedisService } from './redis.service';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 import { UpdateWalletDto } from './dto/updateWallet.dto';
 
-@Controller('redis')
+@Controller('redisupdate')
 export class RedisController {
   private readonly logger = new Logger(RedisController.name);
 
   constructor(private readonly redisService: RedisService) {}
 
   @UseGuards(JwtAuthGuard)
-  @Put('')
+  @Put('updateredis')
   async handleUpdateAddressToRedis(
     @Body() body: UpdateWalletDto,
     @Req() _: any,

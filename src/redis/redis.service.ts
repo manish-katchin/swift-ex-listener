@@ -121,11 +121,11 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
       }
       console.log('==== device ==', { device });
       if (addresses[SupportedWalletChain.ETH])
-        addressMapEth[SupportedWalletChain.ETH] = device.fcmToken;
+        addressMapEth[addresses[SupportedWalletChain.ETH]] = device.fcmToken;
       if (addresses[SupportedWalletChain.BNB])
-        addressMapBnb[SupportedWalletChain.BNB] = device.fcmToken;
-      if (SupportedWalletChain.XLM)
-        addressMapStellar[SupportedWalletChain.XLM] = device.fcmToken;
+        addressMapBnb[addresses[SupportedWalletChain.BNB]] = device.fcmToken;
+      if (addresses[SupportedWalletChain.XLM])
+        addressMapStellar[addresses[SupportedWalletChain.XLM]] = device.fcmToken;
 
       if (Object.keys(addressMapStellar).length > 0)
         result.push(
