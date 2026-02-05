@@ -194,6 +194,10 @@ export class BlockListenerService {
     if (fcmToken) {
       const title: string = `${altText} ${value}  ${tokenType} `;
       const body: string = `From ${from.slice(0, 6)}...${from.slice(-4)}`;
+      if ([title, body, data].some(v => v === null || v === undefined)) {
+        return;
+      }
+      
       await this.notificationService.sendNotification(fcmToken, {
         title,
         body,

@@ -53,6 +53,9 @@ export class StellarService {
     if (fcmToken) {
       const title: string = `${altText} ${parseFloat(value)} ${tokenType} `;
       const body: string = `From ${from}`;
+      if ([title, body, data].some(v => v === null || v === undefined)) {
+        return;
+      }
       await this.notificationService.sendNotification(fcmToken, {
         title,
         body,
@@ -99,13 +102,13 @@ export class StellarService {
         effect.bought_asset_type === 'native'
           ? 'XLM'
           : effect.bought_asset_code;
-      let altText = `Bought: ${effect.bought_amount} ${boughtAsset}, Sold:`;
+      let altText = `Recieved: ${effect.bought_amount} ${boughtAsset}, Sent:`;
       this.sendNotification(
         effect.account,
         soldAsset,
         effect.sold_amount,
         altText,
-        `Orderbook`,
+        `SDEX`,
         effect.transaction_hash,
         'swap',
       );
