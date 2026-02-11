@@ -65,6 +65,25 @@ export class StellarService {
   }
 
   async parseStellarEffect(effect) {
+    //     if (
+    //   effect.type === 'account_created' &&
+    //   (await this.redisService.isKeyExist(
+    //     process.env.STELLAR_REDIS_KEY as string,
+    //     effect.account,
+    //   ))
+    // ) {
+    //   const chain: string = 'XLM';
+
+    //   this.sendNotification(
+    //     effect.account,
+    //     chain,
+    //     effect.starting_balance,
+    //     'Account Created. Bal. ',
+    //     `${effect.account.slice(0, 4)}...${effect.account.slice(-4)}`,
+    //     effect.transaction_hash,
+    //     'trf',
+    //   );
+    // }
     if (
       effect.type === 'account_credited' &&
       (await this.redisService.isKeyExist(

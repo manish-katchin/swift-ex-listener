@@ -20,26 +20,23 @@ export class FirebaseNotificationService {
   ): Promise<string> {
     try {
       const { title, body, data } = payload;
-      const message: admin.messaging.Message = {
+      const message: any = { //admin.messaging.Message 
         token,
         notification: {
           title: title,
           body: body,
         },
+     //   topic: 'txUpdates',
         data: data || {},
         // Android specific configuration for heads-up notifications
         android: {
-          priority: 'high',
+          priority: 'high' as any,
           notification: {
-            priority: 'max',
-            defaultSound: true,
-            defaultVibrateTimings: true,
-            sticky: false,
-            localOnly: false,
-            defaultLightSettings: true,
-            visibility: 'public',
-            channelId: '1',
-            clickAction: 'FLUTTER_NOTIFICATION_CLICK',
+            priority: 'max' as any,
+            defaultSound: true as any,
+            visibility: 'public' as any,
+            channelId: '1' as any,
+            notificationPriority: "PRIORITY_MAX" as any,
           },
           ttl: 3600 * 1000, // 1 hour TTL
         },
