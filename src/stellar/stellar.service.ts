@@ -52,7 +52,8 @@ export class StellarService {
     );
     if (fcmToken) {
       const title: string = `${altText} ${parseFloat(value)} ${tokenType} `;
-      const body: string = `From ${from}`;
+      let subtitle = !from ? "Acc. " : "From ";
+      const body: string = `${subtitle} ${from}`;
       if ([title, body, data].some(v => v === null || v === undefined)) {
         return;
       }
@@ -65,25 +66,25 @@ export class StellarService {
   }
 
   async parseStellarEffect(effect) {
-    //     if (
-    //   effect.type === 'account_created' &&
-    //   (await this.redisService.isKeyExist(
-    //     process.env.STELLAR_REDIS_KEY as string,
-    //     effect.account,
-    //   ))
-    // ) {
-    //   const chain: string = 'XLM';
+        if (
+      effect.type === 'account_created' &&
+      (await this.redisService.isKeyExist(
+        process.env.STELLAR_REDIS_KEY as string,
+        effect.account,
+      ))
+    ) {
+      const chain: string = 'XLM';
 
-    //   this.sendNotification(
-    //     effect.account,
-    //     chain,
-    //     effect.starting_balance,
-    //     'Account Created. Bal. ',
-    //     `${effect.account.slice(0, 4)}...${effect.account.slice(-4)}`,
-    //     effect.transaction_hash,
-    //     'trf',
-    //   );
-    // }
+      this.sendNotification(
+        effect.account,
+        chain,
+        effect.starting_balance,
+        'Account Created. Bal. ',
+        ``,
+        effect.transaction_hash,
+        'trf',
+      );
+    }
     if (
       effect.type === 'account_credited' &&
       (await this.redisService.isKeyExist(
