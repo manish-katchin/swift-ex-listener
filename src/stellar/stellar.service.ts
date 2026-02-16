@@ -52,7 +52,7 @@ export class StellarService {
     );
     if (fcmToken) {
       const title: string = `${altText} ${parseFloat(value)} ${tokenType} `;
-      let subtitle = !from ? "Acc. " : "From ";
+      let subtitle = !from ? "XLM Account Created " : "From ";
       const body: string = `${subtitle} ${from}`;
       if ([title, body, data].some(v => v === null || v === undefined)) {
         return;
@@ -79,7 +79,7 @@ export class StellarService {
         effect.account,
         chain,
         effect.starting_balance,
-        'Account Created. Bal. ',
+        'Starting Bal. ',
         ``,
         effect.transaction_hash,
         'trf',
