@@ -158,7 +158,11 @@ export class BlockListenerService {
     const value = activity.value;
     const txHash = activity.hash;
     const redisKey =
-      network === 'ETH' ? process.env.REDIS_KEY_ETH : process.env.REDIS_KEY_BNB;
+    network === 'ETH' ? process.env.REDIS_KEY_ETH : process.env.REDIS_KEY_BNB;
+
+
+  if(network === 'ETH' && activity?.category === 'internal') return;
+    
 
     this.sendNotification(
       toAddress,
@@ -186,16 +190,17 @@ export class BlockListenerService {
       redisKey as string,
       address,
     );
-    const data: Record<string, string> = {
+
+    if (fcmToken) {
+      const data: Record<string, string> = {
       network,
       txHash: String(txHash),
     };
-
-    if (fcmToken) {
       const title: string = `${altText} ${value}  ${tokenType} `;
-      if ([altText, value, tokenType].some(v => v == null)) return;
-
       const body: string = `From ${from.slice(0, 6)}...${from.slice(-4)}`;
+
+      if ([altText, value, tokenType].some(v => v == null)) return;
+      console.log("---Firing---")
       await this.notificationService.sendNotification(fcmToken, {
         title,
         body,

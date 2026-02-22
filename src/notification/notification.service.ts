@@ -52,8 +52,7 @@ export class FirebaseNotificationService {
                 title: title,
                 body: body,
               },
-              sound: 'default',
-              badge: 1,
+              sound: 'default'
             },
           },
         },
