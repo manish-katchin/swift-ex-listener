@@ -148,21 +148,70 @@ export class BlockListenerService {
     }
   }
 
-  handleWebhookEvent(body: any) {
+  async handleWebhookEvent(body: any) {
+    console.log("EVENT=============",body.event)
     const network = body.event.network.split('_')[0];
-    const activity = body.event.activity[0];
+    const redisKey =
+      network === 'ETH' ? process.env.REDIS_KEY_ETH : process.env.REDIS_KEY_BNB;
+
+
+    const activities = body.event.activity || [];
+
+    let activity: any = null;
+    let fcmToken: any = "";
+    for (const a of activities) {
+      if (!a?.toAddress) continue;
+      const normalizedValue =
+  a.value ??
+  (a.rawContract?.rawValue
+    ? Number(a.rawContract.rawValue) /
+      10 ** (a.rawContract.decimals || 18)
+    : 0);
+
+if (normalizedValue <= 0) continue;
+
+      fcmToken = await this.redisService.hGet(
+        redisKey as string,
+        a.toAddress,
+      );
+
+      if (fcmToken) {
+        activity = { ...a, normalizedValue };
+        break;
+      }
+    }
+
+    if (!activity || !fcmToken) return;
+
+    console.log("============== NETWORK ===================\n", network)
+    console.log("==============ALL activities ===================\n", activities)
+    console.log("==============Selected activity ===================\n", activity)
+
     const fromAddress = activity.fromAddress;
     const toAddress = activity.toAddress;
     const isToken = activity?.category === 'token';
-    const tokenType = isToken ? activity.asset : network;
-    const value = activity.value;
+   const tokenType = isToken
+  ? activity.asset ||
+    `Token (${activity.rawContract?.address?.slice(0, 6) || ''}...)`
+  : network;
+    const value = activity.normalizedValue ?? activity.value ?? 0;
     const txHash = activity.hash;
-    const redisKey =
-    network === 'ETH' ? process.env.REDIS_KEY_ETH : process.env.REDIS_KEY_BNB;
 
 
-  if(network === 'ETH' && activity?.category === 'internal') return;
-    
+
+    if (network === 'ETH' && activity?.category === 'internal') return;
+
+
+console.log(
+      toAddress,"--",
+      tokenType,"--",
+      value,"--",
+      'Received: ',"--",
+      fromAddress,"--",
+      network,"--",
+      txHash,"--",
+      fcmToken
+    )
 
     this.sendNotification(
       toAddress,
@@ -172,7 +221,7 @@ export class BlockListenerService {
       fromAddress,
       network,
       txHash,
-      redisKey,
+      fcmToken,
     );
   }
 
@@ -184,18 +233,15 @@ export class BlockListenerService {
     from,
     network,
     txHash,
-    redisKey,
+    fcmToken,
   ) {
-    const fcmToken: string | null = await this.redisService.hGet(
-      redisKey as string,
-      address,
-    );
 
     if (fcmToken) {
+      console.log("----firing---")
       const data: Record<string, string> = {
-      network,
-      txHash: String(txHash),
-    };
+        network,
+        txHash: String(txHash),
+      };
       const title: string = `${altText} ${value}  ${tokenType} `;
       const body: string = `From ${from.slice(0, 6)}...${from.slice(-4)}`;
 

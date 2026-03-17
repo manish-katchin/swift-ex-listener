@@ -19,7 +19,7 @@ export class ListenerWebhookController {
 
   @Post('eventbnb')
   async handleEventBnb(@Body() body: any) {
-    this.logger.log(`Received event`);
+    this.logger.log(`================ Received event ==================\n`);
     this.blockListenerService.handleWebhookEvent(body);
     return { success: true };
   }
