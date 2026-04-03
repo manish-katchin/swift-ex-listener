@@ -8,12 +8,9 @@ import {
   ALCHEMY_NETWORK_ETH,
   WebhookConfig,
   ALCHEMY_GRAPHQL_QUERY_ETH,
-  ALCHEMY_NETWORK_BNB,
-  ALCHEMY_GRAPHQL_QUERY_BNB,
   ALCHEMY_API_UPDATEHOOK,
 } from '../common/constants/alchemy.constants';
-import { WalletWithDevice } from '../wallet/wallet.types';
-import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
+import { OnEvent } from '@nestjs/event-emitter';
 import { SupportedWalletChain } from 'src/common/enum/chain.eum';
 
 @Injectable()
@@ -26,13 +23,11 @@ export class BlockListenerService {
 
   private alchemyEventHookETH: string;
 
-  private alchemyEventHookBNB: string;
+  private alchemyTokenMultichain: string;
 
   private isUpdateAllHooks: boolean;
 
   private isUpdateHookETH: boolean;
-
-  private isUpdateHookBNB: boolean;
 
   private isUpdateRedis: boolean;
 
@@ -41,7 +36,6 @@ export class BlockListenerService {
     private readonly redisService: RedisService,
     private readonly notificationService: FirebaseNotificationService,
     private readonly walletService: WalletService,
-    private readonly eventEmitter: EventEmitter2,
   ) {
     this.baseUrl = this.configService.get<string>('ALCHEMY_BASE_URL') || '/';
     this.alchemyToken =
@@ -50,49 +44,32 @@ export class BlockListenerService {
       this.configService.get<string>('UPDATE_ADDRESS_ALL_ALCHEMY') === 'true';
     this.isUpdateHookETH =
       this.configService.get<string>('UPDATE_ADDRESS_ETH_ALCHEMY') === 'true';
-    this.isUpdateHookBNB =
-      this.configService.get<string>('UPDATE_ADDRESS_BNB_ALCHEMY') === 'true';
     this.isUpdateRedis =
       this.configService.get<string>('IS_REDIS_INIT') === 'true';
     this.alchemyEventHookETH =
       this.configService.get<string>('ALCHEMY_EVENT_ETH_HOOK') || 'NAN';
-    this.alchemyEventHookBNB =
-      this.configService.get<string>('ALCHEMY_EVENT_BNB_HOOK') || 'NAN';
+    this.alchemyTokenMultichain =
+      this.configService.get<string>('ALCHEMY_TOKEN_MULTICHAIN') || 'NAN';
   }
 
   async onModuleInit() {
     this.logger.log('Starting Alchemy log subscription...');
 
-    await this.addWalletAddressToRedis();
+    const multiAddresses = await this.addWalletAddressToRedis();
 
     await this.createWebhook({
-      redisKey: process.env.REDIS_KEY_ETH as string,
       network: ALCHEMY_NETWORK_ETH,
       webhookName: ALCHEMY_NETWORK_ETH,
       updateHookFlag: this.isUpdateHookETH,
       webhookCallbackURL: this.alchemyEventHookETH,
       graphQlQuery: ALCHEMY_GRAPHQL_QUERY_ETH,
       apiURL: ALCHEMY_API_CREATEHOOK,
-    });
-
-    await this.createWebhook({
-      redisKey: process.env.REDIS_KEY_BNB as string,
-      network: ALCHEMY_NETWORK_BNB,
-      webhookName: ALCHEMY_NETWORK_BNB,
-      updateHookFlag: this.isUpdateHookBNB,
-      webhookCallbackURL: this.alchemyEventHookBNB,
-      graphQlQuery: ALCHEMY_GRAPHQL_QUERY_BNB,
-      apiURL: ALCHEMY_API_CREATEHOOK,
-    });
+    }, multiAddresses);
   }
 
-  private async createWebhook(config: WebhookConfig): Promise<void> {
+  private async createWebhook(config: WebhookConfig, addressKeys: string[]): Promise<void> {
     // ***** All hooks should be true to update any hook ******
     if (!this.isUpdateAllHooks || !config.updateHookFlag) return;
-
-    let addressKeys: string[] = await this.redisService.hGetKey(
-      config.redisKey as string,
-    );
 
     const path: string = `${this.baseUrl}${config.apiURL}`;
     this.logger.log(`Creating New WebHook`);
@@ -124,7 +101,9 @@ export class BlockListenerService {
 
   private async updateWebhook(
     config: WebhookConfig,
-    addressKeys: string[],
+    addressesToAdd: string[],
+    addressesToRemove: string[] = [],
+    token?: string,
   ): Promise<void> {
     const path: string = `${this.baseUrl}${config.apiURL}`;
     this.logger.log(`Updating Hook WebHook`);
@@ -132,13 +111,13 @@ export class BlockListenerService {
     const response = await fetch(path, {
       method: 'PATCH',
       headers: {
-        'X-Alchemy-Token': this.alchemyToken,
+        'X-Alchemy-Token': token ?? this.alchemyToken,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
         webhook_id: config.webHookId,
-        addresses_to_add: addressKeys,
-        addresses_to_remove: [],
+        addresses_to_add: addressesToAdd,
+        addresses_to_remove: addressesToRemove,
       }),
     });
 
@@ -151,9 +130,6 @@ export class BlockListenerService {
   async handleWebhookEvent(body: any) {
     console.log("EVENT=============",body.event)
     const network = body.event.network.split('_')[0];
-    const redisKey =
-      network === 'ETH' ? process.env.REDIS_KEY_ETH : process.env.REDIS_KEY_BNB;
-
 
     const activities = body.event.activity || [];
 
@@ -170,10 +146,8 @@ export class BlockListenerService {
 
 if (normalizedValue <= 0) continue;
 
-      fcmToken = await this.redisService.hGet(
-        redisKey as string,
-        a.toAddress,
-      );
+      const wallet = await this.walletService.findByMultiAddressWithDevice(a.toAddress);
+      fcmToken = (wallet as any)?.deviceId?.fcmToken;
 
       if (fcmToken) {
         activity = { ...a, normalizedValue };
@@ -199,7 +173,7 @@ if (normalizedValue <= 0) continue;
 
 
 
-    if (network === 'ETH' && activity?.category === 'internal') return;
+    if (activity?.category === 'internal') return;
 
 
 console.log(
@@ -255,67 +229,68 @@ console.log(
     }
   }
 
-  @OnEvent('wallet.updated')
-  async handleWalletUpdateEth(payload) {
-    await this.updateWebhook(
-      {
-        webHookId: payload.webHookId,
-        apiURL: ALCHEMY_API_UPDATEHOOK,
-      },
-      payload.addresses,
-    );
+  @OnEvent('wallet.removed')
+  async handleWalletRemove(payload) {
+    const addresses = payload.addresses;
+
+    await this.updateWebhook({ webHookId: process.env.ALCHEMY_WEBHOOKID_ETH, apiURL: ALCHEMY_API_UPDATEHOOK }, [], addresses);
+    await this.updateWebhook({ webHookId: process.env.ALCHEMY_WEBHOOKID_BNB, apiURL: ALCHEMY_API_UPDATEHOOK }, [], addresses);
+
+    const multichainWebhookIds = [
+      process.env.ALCHEMY_WEBHOOKID_OP,
+      process.env.ALCHEMY_WEBHOOKID_BASE,
+      process.env.ALCHEMY_WEBHOOKID_AVAX,
+      process.env.ALCHEMY_WEBHOOKID_POL,
+      process.env.ALCHEMY_WEBHOOKID_ARB,
+    ];
+    for (const webhookId of multichainWebhookIds) {
+      if (webhookId) await this.updateWebhook({ webHookId: webhookId, apiURL: ALCHEMY_API_UPDATEHOOK }, [], addresses, this.alchemyTokenMultichain);
+    }
   }
 
-  async addWalletAddressToRedis() {
-    if (!this.isUpdateRedis) return;
+  @OnEvent('wallet.updated')
+  async handleWalletUpdateEth(payload) {
+    const addresses = payload.addresses;
 
-    let limit = 200,
-      offset = 0;
-    const total = await this.walletService.totalRecords();
-    console.log('===total ', total);
+    // ETH + BNB
+    await this.updateWebhook({ webHookId: process.env.ALCHEMY_WEBHOOKID_ETH, apiURL: ALCHEMY_API_UPDATEHOOK }, addresses);
+    await this.updateWebhook({ webHookId: process.env.ALCHEMY_WEBHOOKID_BNB, apiURL: ALCHEMY_API_UPDATEHOOK }, addresses);
+
+    // OP, BASE, AVAX, POL, ARB — shared multichain token
+    const multichainWebhookIds = [
+      process.env.ALCHEMY_WEBHOOKID_OP,
+      process.env.ALCHEMY_WEBHOOKID_BASE,
+      process.env.ALCHEMY_WEBHOOKID_AVAX,
+      process.env.ALCHEMY_WEBHOOKID_POL,
+      process.env.ALCHEMY_WEBHOOKID_ARB,
+    ];
+    for (const webhookId of multichainWebhookIds) {
+      if (webhookId) await this.updateWebhook({ webHookId: webhookId, apiURL: ALCHEMY_API_UPDATEHOOK }, addresses, [], this.alchemyTokenMultichain);
+    }
+  }
+
+  async addWalletAddressToRedis(): Promise<string[]> {
+    if (!this.isUpdateRedis) return [];
+
+    let limit = 200, offset = 0;
+    const total = await this.walletService.totalXlmRecords();
+    console.log('===total XLM wallets', total);
+
     while (true) {
-      const records = await this.walletService.findAllByWithDevice(
-        limit,
-        offset,
-      );
+      const records = await this.walletService.findAllXlmWithDevice(limit, offset);
 
-      if (records && records.length == 0) {
-        this.logger.log('All records processed');
+      if (!records || records.length === 0) {
+        this.logger.log('All XLM records processed');
         break;
       }
 
-      const addressMapEth: Record<string, string> = {};
-      const addressMapBnb: Record<string, string> = {};
       const addressMapStellar: Record<string, string> = {};
-      for (const record of records as WalletWithDevice[]) {
-        if (record && record.addresses && record.deviceId) {
-          const wallet: WalletWithDevice = record;
-
-          if (record.addresses.get(SupportedWalletChain.ETH))
-            addressMapEth[
-              record.addresses.get(SupportedWalletChain.ETH) as string
-            ] = record.deviceId.fcmToken;
-          if (record.addresses.get(SupportedWalletChain.BNB))
-            addressMapBnb[
-              record.addresses.get(SupportedWalletChain.BNB) as string
-            ] = record.deviceId.fcmToken;
-          if (record.addresses.get(SupportedWalletChain.XLM))
-            addressMapStellar[
-              record.addresses.get(SupportedWalletChain.XLM) as string
-            ] = record.deviceId.fcmToken;
+      for (const record of records) {
+        if (record?.addresses && record.deviceId) {
+          const xlm = record.addresses.get(SupportedWalletChain.XLM);
+          if (xlm) addressMapStellar[xlm] = record.deviceId.fcmToken;
         }
       }
-      if (Object.keys(addressMapEth).length > 0)
-        await this.redisService.hSet(
-          process.env.REDIS_KEY_ETH as string,
-          addressMapEth,
-        );
-
-      if (Object.keys(addressMapBnb).length > 0)
-        await this.redisService.hSet(
-          process.env.REDIS_KEY_BNB as string,
-          addressMapBnb,
-        );
 
       if (Object.keys(addressMapStellar).length > 0)
         await this.redisService.hSet(
@@ -325,5 +300,6 @@ console.log(
 
       offset += limit;
     }
+    return [];
   }
 }

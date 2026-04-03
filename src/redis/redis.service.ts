@@ -7,6 +7,7 @@ import {
   HttpStatus,
   NotFoundException,
 } from '@nestjs/common';
+
 import Redis from 'ioredis';
 import { DeviceService } from '../device/device.service';
 import { Device } from '../device/schema/device.schema';
@@ -94,8 +95,6 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   async handleUpdateAddressToRedis(
     body: UpdateWalletDto,
   ): Promise<ApiResponse> {
-    const addressMapEth: Record<string, string> = {};
-    const addressMapBnb: Record<string, string> = {};
     const addressMapStellar: Record<string, string> = {};
     let result: number[] = [];
     console.log('==== body ==', { body });
@@ -120,10 +119,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
         throw new NotFoundException('Device not found');
       }
       console.log('==== device ==', { device });
-      if (addresses[SupportedWalletChain.ETH])
-        addressMapEth[addresses[SupportedWalletChain.ETH]] = device.fcmToken;
-      if (addresses[SupportedWalletChain.BNB])
-        addressMapBnb[addresses[SupportedWalletChain.BNB]] = device.fcmToken;
+
       if (addresses[SupportedWalletChain.XLM])
         addressMapStellar[addresses[SupportedWalletChain.XLM]] = device.fcmToken;
 
@@ -135,32 +131,11 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
           ),
         );
 
-      if (Object.keys(addressMapEth).length > 0) {
-        result.push(
-          await this.hSet(process.env.REDIS_KEY_ETH as string, addressMapEth),
-        );
+      if (addresses[SupportedWalletChain.MULTI]) {
         try {
           this.eventEmitter.emit('wallet.updated', {
             webHookId: process.env.ALCHEMY_WEBHOOKID_ETH,
-            addresses: [addresses[SupportedWalletChain.ETH]],
-          });
-        } catch (error) {
-          this.logger.error('Error handling PUT event - from Alchemy', error);
-          throw new HttpException(
-            { success: false, error: error.message },
-            HttpStatus.FAILED_DEPENDENCY,
-          );
-        }
-      }
-
-      if (Object.keys(addressMapBnb).length > 0) {
-        result.push(
-          await this.hSet(process.env.REDIS_KEY_BNB as string, addressMapBnb),
-        );
-        try {
-          this.eventEmitter.emit('wallet.updated', {
-            webHookId: process.env.ALCHEMY_WEBHOOKID_BNB,
-            addresses: [addresses[SupportedWalletChain.BNB]],
+            addresses: [addresses[SupportedWalletChain.MULTI]],
           });
         } catch (error) {
           this.logger.error('Error handling PUT event - from Alchemy', error);
@@ -174,6 +149,37 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
       return { success: true, totalUpdated: result };
     } catch (error) {
       this.logger.error('Error handling PUT event', error);
+      throw new HttpException(
+        { success: false, error: error.message },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  async handleRemoveAddress(body: UpdateWalletDto): Promise<ApiResponse> {
+    try {
+      const addresses: any = body.addresses;
+      if (!addresses) {
+        throw new HttpException(
+          { success: false, error: 'No Addresses Found' },
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      if (addresses[SupportedWalletChain.XLM])
+        await this.client.hdel(
+          process.env.STELLAR_REDIS_KEY as string,
+          addresses[SupportedWalletChain.XLM],
+        );
+
+      if (addresses[SupportedWalletChain.MULTI])
+        this.eventEmitter.emit('wallet.removed', {
+          addresses: [addresses[SupportedWalletChain.MULTI]],
+        });
+
+      return { success: true };
+    } catch (error) {
+      this.logger.error('Error handling DELETE event', error);
       throw new HttpException(
         { success: false, error: error.message },
         HttpStatus.INTERNAL_SERVER_ERROR,

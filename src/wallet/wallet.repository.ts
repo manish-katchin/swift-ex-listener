@@ -40,6 +40,24 @@ export class WalletRepository {
     }) as unknown as WalletWithDevice[];
   }
 
+  async findAllXlmWithDevice(limit: number, offset: number): Promise<WalletWithDevice[]> {
+    return this.walletModel.find({ 'addresses.xlm': { $exists: true, $ne: '' } }).skip(offset).limit(limit).populate({
+      path: 'deviceId',
+      select: 'fcmToken',
+    }) as unknown as WalletWithDevice[];
+  }
+
+  async totalXlmCount(): Promise<number> {
+    return this.walletModel.countDocuments({ 'addresses.xlm': { $exists: true, $ne: '' } });
+  }
+
+  async findOneByMultiWithDevice(address: string): Promise<WalletWithDevice | null> {
+    return this.walletModel.findOne({ 'addresses.multi': address }).populate({
+      path: 'deviceId',
+      select: 'fcmToken',
+    }) as unknown as WalletWithDevice;
+  }
+
   // async migrateWalletFields(): Promise<void> {
   //   try {
   //     const result = await this.walletModel.updateMany(
