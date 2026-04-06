@@ -1,5 +1,6 @@
-import { Controller, Post, Body, Get, Query, Logger } from '@nestjs/common';
+import { Controller, Post, Body, Logger, UseGuards } from '@nestjs/common';
 import { BlockListenerService } from '../block-listener.service';
+import { AlchemySignatureGuard } from './alchemy-signature.guard';
 
 @Controller('listener-webhook')
 export class ListenerWebhookController {
@@ -7,8 +8,7 @@ export class ListenerWebhookController {
 
   constructor(private readonly blockListenerService: BlockListenerService) {}
 
-  
-
+  @UseGuards(AlchemySignatureGuard)
   @Post('eventeth')
   async handleEventEth(@Body() body: any) {
     this.logger.log(`Received event`);
@@ -16,12 +16,11 @@ export class ListenerWebhookController {
     return { success: true };
   }
 
-
+  @UseGuards(AlchemySignatureGuard)
   @Post('eventbnb')
   async handleEventBnb(@Body() body: any) {
     this.logger.log(`================ Received event ==================\n`);
     this.blockListenerService.handleWebhookEvent(body);
     return { success: true };
   }
- 
 }

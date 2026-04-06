@@ -11,6 +11,7 @@ import {
   ALCHEMY_API_UPDATEHOOK,
 } from '../common/constants/alchemy.constants';
 import { OnEvent } from '@nestjs/event-emitter';
+import { RateLimitService, AmlFlag } from './rate-limit.service';
 import { SupportedWalletChain } from 'src/common/enum/chain.eum';
 
 @Injectable()
@@ -36,6 +37,7 @@ export class BlockListenerService {
     private readonly redisService: RedisService,
     private readonly notificationService: FirebaseNotificationService,
     private readonly walletService: WalletService,
+    private readonly rateLimitService: RateLimitService,
   ) {
     this.baseUrl = this.configService.get<string>('ALCHEMY_BASE_URL') || '/';
     this.alchemyToken =
@@ -65,6 +67,20 @@ export class BlockListenerService {
       graphQlQuery: ALCHEMY_GRAPHQL_QUERY_ETH,
       apiURL: ALCHEMY_API_CREATEHOOK,
     }, multiAddresses);
+  }
+
+  private getWebhookConfig(network: string): { webhookId: string | undefined; token: string | undefined } {
+    const multichainToken = this.alchemyTokenMultichain;
+    const map: Record<string, { webhookId: string | undefined; token: string | undefined }> = {
+      ETH:  { webhookId: process.env.ALCHEMY_WEBHOOKID_ETH,  token: this.alchemyToken },
+      BNB:  { webhookId: process.env.ALCHEMY_WEBHOOKID_BNB,  token: this.alchemyToken },
+      OPT:  { webhookId: process.env.ALCHEMY_WEBHOOKID_OP,   token: multichainToken },
+      BASE: { webhookId: process.env.ALCHEMY_WEBHOOKID_BASE,  token: multichainToken },
+      ARB:  { webhookId: process.env.ALCHEMY_WEBHOOKID_ARB,   token: multichainToken },
+      AVAX: { webhookId: process.env.ALCHEMY_WEBHOOKID_AVAX,  token: multichainToken },
+      MATIC:{ webhookId: process.env.ALCHEMY_WEBHOOKID_POL,   token: multichainToken },
+    };
+    return map[network] ?? { webhookId: undefined, token: undefined };
   }
 
   private async createWebhook(config: WebhookConfig, addressKeys: string[]): Promise<void> {
@@ -128,7 +144,7 @@ export class BlockListenerService {
   }
 
   async handleWebhookEvent(body: any) {
-    console.log("EVENT=============",body.event)
+    this.logger.log(`Received webhook event from ${body.event?.network}`);
     const network = body.event.network.split('_')[0];
 
     const activities = body.event.activity || [];
@@ -157,9 +173,6 @@ if (normalizedValue <= 0) continue;
 
     if (!activity || !fcmToken) return;
 
-    console.log("============== NETWORK ===================\n", network)
-    console.log("==============ALL activities ===================\n", activities)
-    console.log("==============Selected activity ===================\n", activity)
 
     const fromAddress = activity.fromAddress;
     const toAddress = activity.toAddress;
@@ -171,21 +184,36 @@ if (normalizedValue <= 0) continue;
     const value = activity.normalizedValue ?? activity.value ?? 0;
     const txHash = activity.hash;
 
-
-
     if (activity?.category === 'internal') return;
 
+    // Layer 1 — check if toAddress is banned on this chain
+    if (await this.rateLimitService.isToAddressBanned(toAddress, network)) {
+      this.logger.warn(`Notification suppressed — ${toAddress} banned on ${network}`);
+      return;
+    }
 
-console.log(
-      toAddress,"--",
-      tokenType,"--",
-      value,"--",
-      'Received: ',"--",
-      fromAddress,"--",
-      network,"--",
-      txHash,"--",
-      fcmToken
-    )
+    // Layer 2 — AML: track fromAddress activity
+    const amlResult = await this.rateLimitService.trackAndCheckFromAddress(fromAddress, toAddress, network);
+    if (amlResult.flagged) {
+      // TODO: save to AML DB (commented until ready)
+      // await this.amlService.save({ fromAddress, toAddress, chain: network, flag: amlResult.flag });
+      if (amlResult.flag === AmlFlag.MALICIOUS) {
+        this.logger.warn(`AML malicious — blocking ${toAddress} on ${network}`);
+        const { webhookId, token } = this.getWebhookConfig(network);
+        if (webhookId) await this.updateWebhook({ webHookId: webhookId, apiURL: ALCHEMY_API_UPDATEHOOK }, [], [toAddress], token);
+        return;
+      }
+    }
+
+    // Layer 1 — track toAddress notification count, apply ban if needed
+    const rateLimitResult = await this.rateLimitService.trackAndCheckToAddress(toAddress, network);
+    if (rateLimitResult.banned) {
+      this.logger.warn(`Rate limit hit — removing ${toAddress} from ${network} webhook`);
+      const { webhookId, token } = this.getWebhookConfig(network);
+      if (webhookId) await this.updateWebhook({ webHookId: webhookId, apiURL: ALCHEMY_API_UPDATEHOOK }, [], [toAddress], token);
+      return;
+    }
+
 
     this.sendNotification(
       toAddress,
@@ -211,7 +239,6 @@ console.log(
   ) {
 
     if (fcmToken) {
-      console.log("----firing---")
       const data: Record<string, string> = {
         network,
         txHash: String(txHash),
@@ -220,7 +247,6 @@ console.log(
       const body: string = `From ${from.slice(0, 6)}...${from.slice(-4)}`;
 
       if ([altText, value, tokenType].some(v => v == null)) return;
-      console.log("---Firing---")
       await this.notificationService.sendNotification(fcmToken, {
         title,
         body,
@@ -274,7 +300,7 @@ console.log(
 
     let limit = 200, offset = 0;
     const total = await this.walletService.totalXlmRecords();
-    console.log('===total XLM wallets', total);
+    this.logger.log(`Total XLM wallets: ${total}`);
 
     while (true) {
       const records = await this.walletService.findAllXlmWithDevice(limit, offset);

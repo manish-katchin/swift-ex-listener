@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { BlockListenerService } from './block-listener.service';
+import { RateLimitService } from './rate-limit.service';
+import { BanExpiryService } from './ban-expiry.service';
 import { RedisModule } from '../redis/redis.module';
 import { NotificationModule } from '../notification/notification.module';
 import { WalletModule } from '../wallet/wallet.module';
@@ -8,7 +10,7 @@ import { ListenerWebhookController } from './listener-webhook/listener-webhook.c
 
 @Module({
   imports: [RedisModule, NotificationModule, WalletModule, DeviceModule],
-  providers: [BlockListenerService],
+  providers: [BlockListenerService, RateLimitService, BanExpiryService],
   controllers: [ListenerWebhookController],
 })
 export class BlockListenerModule {}
